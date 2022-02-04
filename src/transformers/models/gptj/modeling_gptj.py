@@ -46,6 +46,21 @@ GPTJ_PRETRAINED_MODEL_ARCHIVE_LIST = [
     # See all GPT-J models at https://huggingface.co/models?filter=gptj
 ]
 
+def to_gpu(x, config):
+    model_dtypes = {"fp16": torch.float16, "fp32": torch.float32, "bf16": torch.bfloat16}
+    try:
+        if not torch.has_cuda():
+            return x
+    except:
+        return x
+    if config.model_device is not None and config.model_dtype is not None:
+        x = x.to(model_dtypes[config.model_dtype])
+    if config.model_device == "cuda":
+        return x.cuda()
+    elif config.model_device is not None:
+        return x.to(config.model_device)
+    else:
+        return x
 
 def fixed_pos_embedding(x, seq_dim=1, seq_len=None):
     dim = x.shape[-1]
@@ -455,7 +470,7 @@ class GPTJModel(GPTJPreTrainedModel):
         self.vocab_size = config.vocab_size
         self.wte = nn.Embedding(config.vocab_size, self.embed_dim)
         self.drop = nn.Dropout(config.embd_pdrop)
-        self.h = nn.ModuleList([GPTJBlock(config) for _ in range(config.n_layer)])
+        self.h = nn.ModuleList([to_gpu(GPTJBlock(config), config) for _ in range(config.n_layer)])
         self.ln_f = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_epsilon)
 
         # Model parallel
@@ -693,8 +708,8 @@ class GPTJForCausalLM(GPTJPreTrainedModel):
 
     def __init__(self, config):
         super().__init__(config)
-        self.transformer = GPTJModel(config)
-        self.lm_head = nn.Linear(config.n_embd, config.vocab_size)
+        self.transformer = to_gpu(GPTJModel(config),config)
+        self.lm_head = to_gpu(nn.Linear(config.n_embd, config.vocab_size),config)
 
         # Model parallel
         self.model_parallel = False

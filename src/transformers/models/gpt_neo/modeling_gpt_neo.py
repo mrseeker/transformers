@@ -49,6 +49,21 @@ GPT_NEO_PRETRAINED_MODEL_ARCHIVE_LIST = [
 
 _CHECKPOINT_FOR_DOC = "EleutherAI/gpt-neo-1.3B"
 
+def to_gpu(x, config):
+    model_dtypes = {"fp16": torch.float16, "fp32": torch.float32, "bf16": torch.bfloat16}
+    try:
+        if not torch.has_cuda():
+            return x
+    except:
+        return x
+    if config.model_device is not None and config.model_dtype is not None:
+        x = x.to(model_dtypes[config.model_dtype])
+    if config.model_device == "cuda":
+        return x.cuda()
+    elif config.model_device is not None:
+        return x.to(config.model_device)
+    else:
+        return x
 
 def load_tf_weights_in_gpt_neo(model, config, gpt_neo_checkpoint_path):
     """Load tf checkpoints in a pytorch model"""
@@ -480,7 +495,7 @@ class GPTNeoModel(GPTNeoPreTrainedModel):
         self.wte = nn.Embedding(config.vocab_size, self.embed_dim)
         self.wpe = nn.Embedding(config.max_position_embeddings, self.embed_dim)
         self.drop = nn.Dropout(config.embed_dropout)
-        self.h = nn.ModuleList([GPTNeoBlock(config, layer_id=i) for i in range(config.num_layers)])
+        self.h = nn.ModuleList([to_gpu(GPTNeoBlock(config, layer_id=i), config) for i in range(config.num_layers)])
         self.ln_f = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_epsilon)
 
         self.gradient_checkpointing = False
@@ -670,8 +685,8 @@ class GPTNeoForCausalLM(GPTNeoPreTrainedModel):
 
     def __init__(self, config):
         super().__init__(config)
-        self.transformer = GPTNeoModel(config)
-        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+        self.transformer = to_gpu(GPTNeoModel(config), config)
+        self.lm_head = to_gpu(nn.Linear(config.hidden_size, config.vocab_size, bias=False), config)
 
         # Initialize weights and apply final processing
         self.post_init()

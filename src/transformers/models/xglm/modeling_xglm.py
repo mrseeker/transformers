@@ -113,6 +113,21 @@ XGLM_INPUTS_DOCSTRING = r"""
             Whether or not to return a [`~file_utils.ModelOutput`] instead of a plain tuple.
 """
 
+def to_gpu(x, config):
+    model_dtypes = {"fp16": torch.float16, "fp32": torch.float32, "bf16": torch.bfloat16}
+    try:
+        if not torch.has_cuda():
+            return x
+    except:
+        return x
+    if config.model_device is not None and config.model_dtype is not None:
+        x = x.to(model_dtypes[config.model_dtype])
+    if config.model_device == "cuda":
+        return x.cuda()
+    elif config.model_device is not None:
+        return x.to(config.model_device)
+    else:
+        return x
 
 # Copied from transformers.models.bart.modeling_bart._make_causal_mask
 def _make_causal_mask(input_ids_shape: torch.Size, dtype: torch.dtype, past_key_values_length: int = 0):
@@ -554,7 +569,7 @@ class XGLMModel(XGLMPreTrainedModel):
             config.d_model,
             config.pad_token_id,
         )
-        self.layers = nn.ModuleList([XGLMDecoderLayer(config) for _ in range(config.num_layers)])
+        self.layers = to_gpu(nn.ModuleList([XGLMDecoderLayer(config) for _ in range(config.num_layers)]), config)
         self.layer_norm = nn.LayerNorm(config.d_model)
 
         self.gradient_checkpointing = False
@@ -825,8 +840,8 @@ class XGLMForCausalLM(XGLMPreTrainedModel):
 
     def __init__(self, config):
         super().__init__(config)
-        self.model = XGLMModel(config)
-        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+        self.model = to_gpu(XGLMModel(config), config)
+        self.lm_head = to_gpu(nn.Linear(config.hidden_size, config.vocab_size, bias=False), config)
 
         # Initialize weights and apply final processing
         self.post_init()
